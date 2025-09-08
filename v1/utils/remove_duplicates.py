@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 import ast
@@ -20,8 +19,8 @@ def get_unique_text_number(url):
     return len(unique_urls)
 
 
-filepath = 'stortinget_dataset.csv'
-newfile = 'stortinget_dataset_clean.csv'
+filepath = '../data/stortinget_dataset.csv'
+newfile = '../data/stortinget_dataset_clean.csv'
 
 batch_num = 0
 batch_size = 1000
