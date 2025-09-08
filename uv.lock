@@ -251,9 +251,13 @@ sdist = { url = "https://files.pythonhosted.org/packages/a4/18/1da9464c86c3e5966
 
 [[package]]
 name = "pysparsecoalescedtsetlinmachinecuda"
-version = "0.2.0"
-source = { path = "../../PySparseCoalescedTsetlinMachineCUDA/dist/pysparsecoalescedtsetlinmachinecuda-0.2.0.tar.gz" }
-sdist = { hash = "sha256:d7e878f3a555c3b5b3dacc6cfa24a1dc66e6010155a9b73ae53c533d9f3daecd" }
+version = "0.2.0.24"
+source = { git = "https://github.com/Mayur1009/PySparseCoalescedTsetlinMachineCUDA.git?branch=dev#efd4c70ddac9191ea14e71067885c85863af5365" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pycuda" },
+    { name = "scipy" },
+]
 
 [[package]]
 name = "python-dateutil"
@@ -484,7 +488,7 @@ requires-dist = [
     { name = "platformdirs", specifier = "==4.3.8" },
     { name = "pycoalescedtsetlinmachinecuda", path = "../../PyCoalescedTsetlinMachineCUDA/dist/pycoalescedtsetlinmachinecuda-0.1.9.tar.gz" },
     { name = "pycuda", specifier = "==2025.1.1" },
-    { name = "pysparsecoalescedtsetlinmachinecuda", path = "../../PySparseCoalescedTsetlinMachineCUDA/dist/pysparsecoalescedtsetlinmachinecuda-0.2.0.tar.gz" },
+    { name = "pysparsecoalescedtsetlinmachinecuda", git = "https://github.com/Mayur1009/PySparseCoalescedTsetlinMachineCUDA.git?branch=dev" },
     { name = "python-dateutil", specifier = "==2.9.0.post0" },
     { name = "pytools", specifier = "==2025.2.1" },
     { name = "pytz", specifier = "==2025.2" },

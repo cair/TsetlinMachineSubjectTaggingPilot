@@ -38,4 +38,4 @@ dependencies = [
 
 [tool.uv.sources]
 pycoalescedtsetlinmachinecuda = { path = "../../PyCoalescedTsetlinMachineCUDA/dist/pycoalescedtsetlinmachinecuda-0.1.9.tar.gz" }
-pysparsecoalescedtsetlinmachinecuda = { path = "../../PySparseCoalescedTsetlinMachineCUDA/dist/pysparsecoalescedtsetlinmachinecuda-0.2.0.tar.gz" }
+pysparsecoalescedtsetlinmachinecuda = { git = "https://github.com/Mayur1009/PySparseCoalescedTsetlinMachineCUDA.git", branch = "dev" }
