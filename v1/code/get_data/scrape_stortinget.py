@@ -52,7 +52,6 @@ def parse_sak_detail(sakid):
         'tittel': tittel,
         'emneord': emne_liste,
         'sammendrag': None,
-        'tilrading': None,
         'html': None,
         'url': None,
     }
@@ -75,7 +74,7 @@ def extract_html_data(url, sakid, tittel, emneord):
             for sibling in heading.find_next_siblings('p'):
                 vedtak_text += sibling.text.strip() + ' '
         else:
-            for lvl in range(2, 12):
+            for lvl in range(2, 50):
                 sub_url = url.split('/?lvl=')[0].rstrip('/') + f'/{lvl}/'
                 try:
                     sub_resp = requests.get(sub_url)
@@ -113,7 +112,7 @@ def extract_html_data(url, sakid, tittel, emneord):
         }
 
 
-def run_scraper(start_year=1999, end_year=2025, output_csv='data3.csv'):
+def run_scraper(start_year=1999, end_year=2025, output_csv='XXX.csv'):
     all_data = []
     existing_ids = set()
 

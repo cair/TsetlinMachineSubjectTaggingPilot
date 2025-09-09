@@ -10,9 +10,12 @@ dependencies = [
     "certifi==2025.7.9",
     "charset-normalizer==3.4.2",
     "idna==3.10",
+    "ipykernel>=6.30.1",
+    "ipython>=9.5.0",
     "joblib==1.5.1",
     "mako==1.3.10",
     "markupsafe==3.0.2",
+    "matplotlib>=3.10.6",
     "numpy==2.3.1",
     "pandas==2.3.1",
     "platformdirs==4.3.8",
@@ -25,6 +28,7 @@ dependencies = [
     "requests==2.32.4",
     "scikit-learn==1.7.0",
     "scipy==1.16.0",
+    "seaborn>=0.13.2",
     "setuptools==80.9.0",
     "siphash24==1.7",
     "six==1.17.0",
@@ -39,3 +43,8 @@ dependencies = [
 [tool.uv.sources]
 pycoalescedtsetlinmachinecuda = { path = "../../PyCoalescedTsetlinMachineCUDA/dist/pycoalescedtsetlinmachinecuda-0.1.9.tar.gz" }
 pysparsecoalescedtsetlinmachinecuda = { git = "https://github.com/Mayur1009/PySparseCoalescedTsetlinMachineCUDA.git", branch = "dev" }
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.30.1",
+]
