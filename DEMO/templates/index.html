@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Text Highlighter</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Text Highlighter</h1>
+    <form method="POST" enctype="multipart/form-data">
+        <label>Upload Text File:</label>
+        <input type="file" name="text_file">
+        <label>Upload Classification File:</label>
+        <input type="file" name="class_file">
+        <button type="submit">Upload</button>
+    </form>
+
+    <div class="container">
+        <div class="left" id="textDisplay"><h3>Text</h3></div>
+        <div class="right">
+            <h3>Classifications</h3>
+            <ul id="classList"></ul>
+        </div>
+    </div>
+
+    <script>
+        const text = {{ text|tojson }};
+        const classifications = {{ classifications|tojson }};
+        const colors = {};
+        const defaultColor = "#ffff00";
+        const usedColors = [];
+        let isHighlighted = false;
+
+const highlightColors = [
+    "#FFA07A", "#66CDAA", "#F0E68C", "#DDA0DD", "#DB7093",
+    "#B0C4DE", "#BA55D3", "#8FBC8F", "#CD5C5C", "#DAA520"
+  ];
+
+let colourind = 0;
+
+        function getRandomColor() {
+            color = highlightColors[colourind];
+            usedColors.push(color);
+            colourind = colourind +1;
+            return color;
+        }
+
+        function highlightText(text, literalsMap) {
+            let highlighted = text;
+            for (const literal in literalsMap) {
+                const classes = literalsMap[literal];
+                const color = classes.length > 1 ? defaultColor : colors[classes[0]];
+                const tooltip = classes.length > 1 ? `title="${classes.join(', ')}"` : '';
+                const span = `<span class="highlight" style="background-color:${color}">$1</span>`;
+                const regex = new RegExp(`\\b(${literal})\\b`, 'gi');
+
+                // 🔍 Debug: Check if regex matches anything
+                const matches = text.match(regex);
+                if (matches) {
+                    console.log(`✅ Found "${literal}" ${matches.length} time(s):`, matches);
+                } else {
+                    console.log(`❌ No match for "${literal}"`);
+                }
+
+                        highlighted = highlighted.replace(regex, span);
+                    }
+                    console.log('text:',highlighted)
+            return highlighted;
+        }
+
+        function highlightClassText(text, classname, literalslist) {
+            let highlighted = text;
+            console.log(classifications, colors[classname], literalslist)
+            for (lit in literalslist) {
+                //console.log(literal, literalslist[literal])
+                literal = literalslist[lit]
+                if (literal !="")
+                    {
+                    const span = `<span class="highlight" style="background-color:${colors[classname]}">$1</span>`;
+                    const regex = new RegExp(`\\b(${literal})\\b`, 'gi');
+                    // 🔍 Debug: Check if regex matches anything
+                    const matches = text.match(regex);
+                    if (matches) {
+                        console.log(`✅ Found "${literal}" ${matches.length} time(s):`, matches);
+                    } else {
+                        console.log(`❌ No match for "${literal}"`);
+                    }
+                    highlighted = highlighted.replace(regex, span);}
+            }
+            return highlighted;
+
+
+            
+        }
+
+        function render() {
+            const literalsMap = {};
+            for (const cls in classifications) {
+                colors[cls] = getRandomColor();
+                for (const lit of classifications[cls]) {
+                    if (lit.trim() === "") continue;
+                    if (!literalsMap[lit]) literalsMap[lit] = [];
+                    literalsMap[lit].push(cls);
+                }
+            }
+
+
+            document.getElementById("textDisplay").innerHTML = highlightText(text, literalsMap);
+
+
+            const classList = document.getElementById("classList");
+            classList.innerHTML = '';
+            for (const cls in classifications) {
+                const li = document.createElement('li');
+                li.innerHTML = `<span class="circle" style="background-color:${colors[cls]}"></span> <span class="class-name" data-class="${cls}">${cls}</span>: ${classifications[cls].join(', ')}`;
+                classList.appendChild(li);
+            }
+            
+            document.querySelectorAll('.class-name').forEach(el => {
+                el.addEventListener('click', () => {
+                    const cls = el.dataset.class;
+                    const literals = classifications[cls];
+                    document.getElementById("textDisplay").innerHTML = highlightClassText(text, cls, literals)
+                });
+                el.addEventListener('dblclick', () => {
+                    document.getElementById("textDisplay").innerHTML = highlightText(text, literalsMap);
+                });
+            });
+
+            document.querySelectorAll('.highlight').forEach(span => {
+                span.addEventListener('click', () => {
+                    const lit = span.dataset.literal;
+                    const classes = literalsMap[lit];
+                    const color = classes.length === 1 ? colors[classes[0]] : defaultColor;
+                    document.querySelectorAll('.highlight').forEach(s => {
+                        s.style.backgroundColor = s.dataset.literal === lit ? color : defaultColor;
+                    });
+                });
+            });
+        }
+
+        render();
+    </script>
+</body>
+</html>
