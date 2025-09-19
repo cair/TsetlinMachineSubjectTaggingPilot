@@ -2,24 +2,15 @@
 
 > Download the folder DEMO
 
-> Open command line from the folder path
+> Open sample_viwer_webapp.html in a web browser
 
-```
-pip install flask
+> Upload folder > DEMO/demo_documents
 
-python app.py
-```
-
-> Open browser
-
-> Go to URL : http://127.0.0.1:5000/
-
-> Upload text file > DEMO/demo_documents/sample_xxx_sammendrag
-
-> Upload clause file > DEMO/demo_documents/sample_xxx_clauses
-
-> Click Upload
-
+> Choose a sample from the dropdown 
 -------
 
-If there are multiple classes, click on the class name to see clauses only of that class. Then Double click on class name to go back to default view.
+If there are multiple classes, click on the class name to see clauses only of that class. Clicking again goes back to the default view, i.e. all literals.
+
+Clicking a literal highlights only that in the text. 
+
+Hovering over a highlighted term shows the classes it belongs to.
