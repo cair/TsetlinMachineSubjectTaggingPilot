@@ -1,0 +1,259 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sample Viewer</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 40px;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+    select {
+      padding: 8px;
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+    }
+    .viewer {
+      flex: 1;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      padding: 15px;
+      height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .class-item {
+      margin-bottom: 10px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .circle {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    .literal {
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .highlight {
+      background-color: yellow;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: #333;
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      display: none;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+
+  <h2 id="header">Currently viewing: None ... Upload a folder to get started</h2>
+
+  <input type="file" id="folderInput" webkitdirectory directory multiple>
+  <p id="fileCount"></p>
+
+  <label for="prefixSelect">Choose a sample:</label>
+  <select id="prefixSelect">
+    <option value="">-- Select --</option>
+  </select>
+
+  <div class="container">
+    <div class="viewer" id="sammendragViewer">sammendrag file content will appear here.</div>
+    <div class="viewer" id="clausesViewer">clauses file content will appear here.</div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const folderInput = document.getElementById("folderInput");
+    const prefixSelect = document.getElementById("prefixSelect");
+    const sammendragViewer = document.getElementById("sammendragViewer");
+    const clausesViewer = document.getElementById("clausesViewer");
+    const header = document.getElementById("header");
+    const fileCount = document.getElementById("fileCount");
+    const tooltip = document.getElementById("tooltip");
+
+    let fileMap = {};
+    let classColors = {};
+    let literalMap = {};
+    let currentPrefix = "";
+    let currentClass = null;
+    let defaultColor = "#FFD700";
+
+    const colorPalette = [
+            "#FFA07A", "#66CDAA", "#F0E68C", "#DDA0DD", "#DB7093",
+            "#B0C4DE", "#BA55D3", "#8FBC8F", "#CD5C5C", "#DAA520"
+          ];
+
+    folderInput.addEventListener("change", () => {
+      fileMap = {};
+      classColors = {};
+      literalMap = {};
+      currentClass = null;
+      currentPrefix = "";
+      sammendragViewer.textContent = "";
+      clausesViewer.textContent = "";
+      header.textContent = "Currently viewing: None... Upload a folder to get started";
+      prefixSelect.innerHTML = '<option value="">-- Select --</option>';
+
+      const files = Array.from(folderInput.files);
+      let sammendragCount = 0;
+      let clausesCount = 0;
+
+      files.forEach(file => {
+        const match = file.name.match(/^(sample_[^_]+)_(sammendrag|clauses)\.txt$/i);
+        if (match) {
+          const prefix = match[1];
+          const type = match[2].toLowerCase();
+
+          if (!fileMap[prefix]) fileMap[prefix] = {};
+          fileMap[prefix][type] = file;
+
+          if (type === "sammendrag") sammendragCount++;
+          if (type === "clauses") clausesCount++;
+        }
+      });
+
+      fileCount.textContent = `Found ${sammendragCount} sammendrag files and ${clausesCount} clauses files.`;
+
+      Object.keys(fileMap).forEach(prefix => {
+        if (fileMap[prefix].sammendrag && fileMap[prefix].clauses) {
+          const option = document.createElement("option");
+          option.value = prefix;
+          option.textContent = prefix;
+          prefixSelect.appendChild(option);
+        }
+      });
+    });
+
+    prefixSelect.addEventListener("change", async () => {
+      const selectedPrefix = prefixSelect.value;
+      if (!selectedPrefix) return;
+
+      currentPrefix = selectedPrefix;
+      header.textContent = `Currently viewing: ${selectedPrefix}`;
+      sammendragViewer.textContent = await fileMap[selectedPrefix].sammendrag.text();
+      const clausesText = await fileMap[selectedPrefix].clauses.text();
+
+      clausesViewer.innerHTML = "";
+      classColors = {};
+      literalMap = {};
+      currentClass = null;
+
+      const lines = clausesText.split(/\r?\n/).filter(line => line.trim());
+      lines.forEach((line, index) => {
+        const parts = line.split(",").map(p => p.trim()).filter(Boolean);
+        if (parts.length < 2) return;
+        const className = parts[0];
+        const literals = parts.slice(1);
+
+        if (!classColors[className]) {
+          classColors[className] = colorPalette[index % colorPalette.length];
+        }
+
+        literals.forEach(lit => {
+          if (!literalMap[lit]) literalMap[lit] = [];
+          if (!literalMap[lit].includes(className)) {
+            literalMap[lit].push(className);
+          }
+        });
+
+        const div = document.createElement("div");
+        div.className = "class-item";
+        div.innerHTML = `<span class="circle" style="background-color:${classColors[className]}"></span><span class="class-name" data-class="${className}">${className}</span>: ${literals.map(l => `<span class="literal" data-literal="${l}">${l}</span>`).join(", ")}`;
+        clausesViewer.appendChild(div);
+      });
+
+      highlightAllLiterals();
+    });
+
+    function highlightAllLiterals() {
+      let text = sammendragViewer.textContent;
+      let html = text;
+      Object.keys(literalMap).forEach(literal => {
+        const classes = literalMap[literal];
+        const color = classes.length > 1 ? defaultColor : classColors[classes[0]];
+        const regex = new RegExp(`\\b( ${literal})\\b`, "gi");
+        html = html.replace(regex, `<span class="highlight" style="background-color:${color}" data-literal="${literal}">$1</span>`);
+      });
+      sammendragViewer.innerHTML = html;
+    }
+
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    clausesViewer.addEventListener("click", e => {
+      if (e.target.classList.contains("class-name")) {
+        const className = e.target.dataset.class;
+        if (currentClass === className) {
+          currentClass = null;
+          highlightAllLiterals();
+        } else {
+          currentClass = className;
+          highlightClassLiterals(className);
+        }
+      } else if (e.target.classList.contains("literal")) {
+        const literal = e.target.dataset.literal;
+        highlightSingleLiteral(literal);
+      }
+    });
+
+    function highlightClassLiterals(className) {
+      let text = sammendragViewer.textContent;
+      let html = text;
+      Object.keys(literalMap).forEach(literal => {
+        if (literalMap[literal].includes(className)) {
+          const regex = new RegExp(`\\b( ${literal})\\b`, "gi");
+          html = html.replace(regex, `<span class="highlight" style="background-color:${classColors[className]}" data-literal="${literal}">$1</span>`);
+        }
+      });
+      sammendragViewer.innerHTML = html;
+    }
+
+    function highlightSingleLiteral(literal) {
+      let text = sammendragViewer.textContent;
+      let html = text;
+      const classes = literalMap[literal];
+      const color = classes.length > 1 ? defaultColor : classColors[classes[0]];
+      const regex = new RegExp(`\\b( ${literal})\\b`, "gi");
+      html = html.replace(regex, `<span class="highlight" style="background-color:${color}" data-literal="${literal}" data-classes="${classes.join(", ")}">$1</span>`);
+      sammendragViewer.innerHTML = html;
+    }
+
+    sammendragViewer.addEventListener("mouseover", e => {
+      if (e.target.classList.contains("highlight") && e.target.dataset.classes) {
+        tooltip.textContent = `Classes: ${e.target.dataset.classes}`;
+        tooltip.style.display = "block";
+        tooltip.style.left = e.pageX + 10 + "px";
+        tooltip.style.top = e.pageY + 10 + "px";
+      }
+    });
+
+    sammendragViewer.addEventListener("mouseout", () => {
+      tooltip.style.display = "none";
+    });
+  </script>
+
+</body>
+</html>
