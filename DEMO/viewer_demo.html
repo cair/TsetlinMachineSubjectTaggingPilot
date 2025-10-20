@@ -268,7 +268,7 @@
         }
       }
       const color = classes.length === 1 ? classData[classes[0]].color : "#FFFF99";
-      const tooltip = classes.length > 1 ? ` title="Classes: ${classes.join(", ")}"` : "";
+      const tooltip = '';//classes.length > 1 ? ` title="Classes: ${classes.join(", ")}"` : "";
       const regex = new RegExp(`\\b( ${literal})\\b`, "gi");
       text = text.replace(regex, match => {
         return `<span class="highlight" style="background-color:${color};"${tooltip}>${match}</span>`;
