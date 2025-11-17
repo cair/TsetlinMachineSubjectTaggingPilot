@@ -1,0 +1,139 @@
+ body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f4f4f4;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    .controls {
+      margin-bottom: 20px;
+    }
+    .viewer-container {
+      display: flex;
+      gap: 20px;
+    }
+    .viewer {
+      flex: 1;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      padding: 15px;
+      height: 70vh;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .viewer2 {
+      flex: 1;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      height: 73vh;
+      overflow-y: auto;
+    }
+    .viewer_right {
+      flex: 1;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      padding: 15px;
+      height: 70vh;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .class-label {
+      font-weight: bold;
+      cursor: pointer;
+      margin-bottom: 5px;
+      margin-top: 5px;
+      display: flex;
+      align-items: center;
+    }
+    .color-circle {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 8px;
+    }
+    .literal {
+      display: inline-block;
+      margin: 2px 5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background-color: #eee;
+      cursor: pointer;
+    }
+
+    .negation-class-label {
+       padding: 2px 6px;
+      font-weight: bold;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+    }
+
+    .negation-literal {
+      display: inline-block;
+      margin: 2px 5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background-color: #eee;
+    }
+    
+.literaltooltip {
+    visibility: hidden;
+    position: absolute;
+      background-color: #333;
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      
+bottom: 125%; /* Position above */
+  left: 50%;
+  transform: translateX(-50%);
+
+      z-index: 1000;
+}
+.negliteraltooltip {
+    visibility: hidden;
+    position: absolute;
+      background-color: #333;
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      
+bottom: 125%; /* Position above */
+  left: 50%;
+  transform: translateX(-50%);
+
+      z-index: 1000;
+}
+
+.literal:hover .literaltooltip {
+    visibility: visible;
+}
+.literaltooltip:hover {
+    visibility: visible;
+}
+
+.negation-literal:hover .negliteraltooltip {
+    visibility: visible;
+}
+.negliteraltooltip:hover {
+    visibility: visible;
+}
+
+    .highlight {
+      background-color: yellow;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: #333;
+      color: #fff;
+      padding: 10px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      display: none;
+      z-index: 1000;
+    }
