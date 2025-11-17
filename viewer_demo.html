@@ -1,0 +1,303 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sample Viewer Web App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <h3 id="header">Currently viewing: None</h3>
+
+  <div class="controls">
+    <label for="folderInput">Upload folder:</label>
+    <input type="file" id="folderInput" webkitdirectory directory multiple>
+    <br><br>
+    <label id="prefixlabel" for="prefixSelect" style="display: none;">Choose a sample:</label>
+    <select id="prefixSelect" style="display: none;">
+      <option value="">-- Select --</option>
+    </select>
+    <br><br>
+    <label id="sliderlabel" for="slider" style="display: none;">Literal Display Percentage:</label>
+    <input type="range" id="slider" min="20" max="100" value="100" style="display: none;">
+    <span id="sliderValue" style="display: none;">100%</span>
+  </div>
+
+  <div class="viewer-container">
+    <div class="viewer" id="sammendragViewer">....</div>
+    <div class="viewer2">
+    <div class="viewer_right" id="clausesViewer">....</div>
+    <div class="viewer_right" id="negationViewer" style="display: none;">....</div></div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const folderInput = document.getElementById("folderInput");
+    const prefixSelect = document.getElementById("prefixSelect");
+    const sammendragViewer = document.getElementById("sammendragViewer");
+    const clausesViewer = document.getElementById("clausesViewer");
+    const header = document.getElementById("header");
+    const slider = document.getElementById("slider");
+    const sliderValue = document.getElementById("sliderValue");
+    const tooltip = document.getElementById("tooltip");
+
+    let fileMap = {};
+    let classData = {};
+    let currentPrefix = "";
+    let currentText = "";
+    let currentHighlights = [];
+
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function generateColor(index) {
+      const colors = ["#FFA07A", "#66CDAA", "#F0E68C", "#DDA0DD", "#DB7093", "#B0C4DE", "#BA55D3", "#8FBC8F", "#CD5C5C", "#DAA520"];
+      return colors[index % colors.length];
+    }
+
+    folderInput.addEventListener("change", () => {
+      fileMap = {};
+      const files = Array.from(folderInput.files);
+
+      files.forEach(file => {
+        const match = file.name.match(/^(.*?)(sammendrag|positives|negatives_vocab)/i);
+        if (match) {
+          const prefix = match[1];
+          const type = match[2].toLowerCase();
+          console.log(`Found file: ${file.name} with prefix: ${prefix} and type: ${type}`);
+          if (!fileMap[prefix]) fileMap[prefix] = {};
+          fileMap[prefix][type] = file;
+        }
+      });
+
+      prefixSelect.innerHTML = '<option value="">-- Select --</option>';
+      Object.keys(fileMap).forEach(prefix => {
+          const option = document.createElement("option");
+          option.value = prefix;
+          option.textContent = prefix;
+          prefixSelect.appendChild(option);
+      });
+
+      prefixSelect.style.display = "inline";
+      document.getElementById("prefixlabel").style.display = "inline";
+    });
+
+    prefixSelect.addEventListener("change", async () => {
+      currentPrefix = prefixSelect.value;
+      if (!currentPrefix) return;
+
+      header.textContent = `Currently viewing: ${currentPrefix}`;
+      const sammendragFile = fileMap[currentPrefix].sammendrag;
+      const clausesFile = fileMap[currentPrefix].positives;
+      const negationsFile = fileMap[currentPrefix].negatives_vocab;
+
+      console.log(`Loading files for prefix: ${sammendragFile.name} and ${clausesFile.name} and ${negationsFile.name}`);
+
+      currentText = await sammendragFile.text();
+      const clausesText = await clausesFile.text();
+      const negationsText = await negationsFile.text();
+
+      sammendragViewer.textContent = currentText;
+      negationsData = {};
+      parseclausesFile(clausesText);
+      parse_negations(negationsText);
+      applyHighlights();
+      slider.style.display = "inline";
+      sliderValue.style.display = "inline";
+      document.getElementById("sliderlabel").style.display = "inline";
+    });
+
+    slider.addEventListener("input", () => {
+      sliderValue.textContent = slider.value + "%";
+      
+      if (currentPrefix) {
+        const negationsfile = fileMap[currentPrefix].negatives_vocab;
+        const clausesFile = fileMap[currentPrefix].positives;
+        clausesFile.text().then(text => {
+          negationsfile.text().then(negationstext =>{
+          parseclausesFile(text);
+          parse_negations(negationstext);
+          applyHighlights();
+        });
+        });
+      }
+    });
+
+    function parse_negations(negationsText){
+      console.log('Negations....');
+      console.log('Negations')
+        const lines2 = negationsText.split(/\r?\n/);
+        lines2.forEach((line, index) => {
+        const parts = line.split(",").map(p => p.trim()).filter(p => p);
+        if (parts.length > 1) {
+          const className = parts[0];
+          const negs = parts.slice(1);
+          const negs_class = negs[0];
+          const neg_size = negs[1];
+          const neg_literals = negs.slice(2);
+          negationsData[className][negs_class] ={neg_size, neg_literals}
+        }
+    });  
+  }
+
+    function parseclausesFile(text) {
+      const negationViewer = document.getElementById("negationViewer");
+      negationViewer.style.display = "none";
+      const clauseview = document.getElementById("clausesViewer");
+      clauseview.style.height = "70vh";
+      classData = {};
+      const lines = text.split(/\r?\n/);
+      lines.forEach((line, index) => {
+        const parts = line.split(",").map(p => p.trim()).filter(p => p);
+        if (parts.length > 1) {
+          const className = parts[0].split('|')[0];
+          const literals = parts.slice(1,-1);
+          const correct = parts[parts.length-1];
+          const color = generateColor(index);
+          classData[className] = { literals, color, correct };
+          negationsData[className] = {};
+        }
+      });
+
+      const percentage = parseInt(slider.value);
+      for (const className in classData) {
+        const allLiterals = classData[className].literals;
+        const count = Math.ceil(allLiterals.length * percentage / 100);
+        classData[className].visibleLiterals = allLiterals.slice(0, count);
+      }
+
+      renderclausesViewer();
+    }
+
+    function renderclausesViewer() {
+      clausesViewer.innerHTML = "<h4>Predicted classes</>";
+      Object.entries(classData).forEach(([className, data]) => {
+        const label = document.createElement("div");
+        label.className = "class-label";
+        label.innerHTML = `<span class="color-circle" style="background-color:${data.color}"></span>${className} (${data.correct})`;
+        label.addEventListener("click", () => highlightClass(className));
+        label.addEventListener("dblclick", () => applyHighlights());
+        clausesViewer.appendChild(label);
+
+        data.visibleLiterals.forEach(literal => {
+          literalword = literal.split('|')[0].replace(/"/g, '');
+          literalimportance = literal.split('|')[1].replace(/"/g, '');
+          const lit = document.createElement("span");
+          lit.className = "literal";
+          lit.innerHTML = '<span class="literaltooltip">'+literalimportance+'</span>'+literalword;
+          lit.addEventListener("click", () => highlightLiteral(literal));
+          clausesViewer.appendChild(lit);
+        });
+      });
+    }
+
+    function applyHighlights() {
+      const negationViewer = document.getElementById("negationViewer");
+      negationViewer.style.display = "none";
+      let text = currentText;
+      currentHighlights = [];
+      const allClasses = Object.keys(classData);
+      let highlightColor = "#FFFF99";
+
+      let literalMap = {};
+      for (const className in classData) {
+        classData[className].visibleLiterals.forEach(lit => {
+          if (!literalMap[lit]) literalMap[lit] = [];
+          literalMap[lit].push(className);
+        });
+      }
+
+      Object.entries(literalMap).forEach(([literal, classes]) => {
+        if (classes.length === 1) {
+          const color = classData[classes[0]].color;
+          currentHighlights.push({ literal, color, classes });
+        } else {
+          currentHighlights.push({ literal, color: highlightColor, classes });
+        }
+      });
+      console.log(literalMap)
+
+      currentHighlights.forEach(({ literal, color, classes }) => {
+        const regex = new RegExp(`\\b(${literal})\\b`, "gi");
+        text = text.replace(regex, match => {
+          const tooltip = classes.length > 1 ? ` title="Classes: ${classes.join(", ")}"` : "";
+          return `<span class="highlight" style="background-color:${color};">${match}</span>`;
+        });
+      });
+
+      sammendragViewer.innerHTML = text;
+    }
+
+    
+
+    function viewNegationsForClass(className) {
+      const negationViewer = document.getElementById("negationViewer");
+      negationViewer.style.display = "block";
+      const clauseview = document.getElementById("clausesViewer");
+      clauseview.style.height = "33vh";
+      negationViewer.style.height = "33vh";
+      negationViewer.innerHTML = "<h4>Negations for class: " + className + "</h4>";
+      Object.entries(negationsData[className]).forEach(([negclassName, data]) => {
+          const negclass = negclassName//+'('+data.neg_size+')'
+          const negDiv = document.createElement("div");
+          negDiv.className = "negation-class-label";
+          negDiv.innerHTML = `${negclass}`;
+          negationViewer.appendChild(negDiv);
+
+          data.neg_literals.forEach(neg_literal => {
+            negliteralword = neg_literal.split('|')[0].replace(/"/g, '');
+            negliteralimportance = neg_literal.split('|')[1].replace(/"/g, '');
+            const neglit = document.createElement("span");
+            neglit.className = "negation-literal"; 
+            neglit.innerHTML = '<span class="negliteraltooltip">'+negliteralimportance+'</span>'+negliteralword;
+            negationViewer.appendChild(neglit);
+          });
+        });
+    
+    }
+
+    function highlightClass(className) {
+      let text = currentText;
+      const data = classData[className];
+      data.visibleLiterals.forEach(literal => {
+        const regex = new RegExp(`\\b(${literal})\\b`, "gi");
+        text = text.replace(regex, match => {
+          return `<span class="highlight" style="background-color:${data.color};"${tooltip}>${match}</span>`;
+        });
+      });
+      sammendragViewer.innerHTML = text;
+      viewNegationsForClass(className);
+    }
+
+    function highlightLiteral(literal) {
+      const negationViewer = document.getElementById("negationViewer");
+      negationViewer.style.display = "none";
+      const clauseview = document.getElementById("clausesViewer");
+      clauseview.style.height = "70vh";
+      console.log(`Highlighting literal: ${literal}`);
+      console.log(classData);
+      let text = currentText;
+      const classes = [];
+      for (const className in classData) {
+        if (classData[className].visibleLiterals.includes(literal)) {
+          classes.push(className);
+        }
+      }
+      console.log(`Literal belongs to classes: ${classes.join(", ")}`);
+      const color = classes.length === 1 ? classData[classes[0]].color : "#FFFF99";
+      const tooltip = '';//classes.length > 1 ? ` title="Classes: ${classes.join(", ")}"` : "";
+      const regex = new RegExp(`\\b(${literal})\\b`, "gi");
+      text = text.replace(regex, match => {
+        return `<span class="highlight" style="background-color:${color};"${tooltip}>${match}</span>`;
+      });
+      sammendragViewer.innerHTML = text;
+    }
+
+
+  </script>
+
+</body>
+</html>
