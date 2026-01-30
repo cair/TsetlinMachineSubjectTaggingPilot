@@ -1,0 +1,2 @@
+#outdated_browser_message { display: none; position: relative; top: 0; z-index: 99; width: 100%; background: yellow; text-align: center; padding: 30px; }
+	#outdated_browser_message > *:last-child { margin-bottom: 0px }

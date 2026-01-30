@@ -1,0 +1,209 @@
+
+function initializeSortableColumns() {
+    const sortableColumnHeaders = document.querySelectorAll(".sort-column");
+
+    // TODO: cache table refs
+    const tablesCache = new Map()
+
+    sortableColumnHeaders.forEach((col) => {
+        // ensure col>span>#text 
+        let span = col.querySelector("span");
+        if (!span) {
+            span = document.createElement("span");
+        }
+        const text = col.textContent.trim();
+        col.textContent = "";
+        span.textContent = text;
+        span.classList.add("sort-column__text");
+
+        // TODO: col or span?
+        span.title = "Sorter kolonnen";
+        span.tabIndex = 0;
+        col.setAttribute('aria-sort', 'none');
+        col.setAttribute('role', 'columnheader');
+
+        col.appendChild(span);
+
+        const table = col.closest("table");
+        const tbody = table.querySelector("tbody");
+
+        // Determine and store column type as data attribute
+        const colIndex = Array.from(col.parentNode.children).indexOf(col);
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+        const columnType = determineColumnType(rows, colIndex);
+        col.setAttribute('data-sort-type', columnType);
+
+        // Set default sort direction based on column type
+        const defaultDirection = getDefaultSortDirection(columnType);
+        col.setAttribute('data-default-direction', defaultDirection);
+
+        // add event listeners
+        col.addEventListener("click", (event) => {
+            handleSortEvent(table, tbody, col);
+        });
+        col.addEventListener("keydown", (event) => {
+            if (event.key === " " || event.key === "Enter" || event.keyCode === 32 || event.keyCode === 13) {
+                event.preventDefault();
+                handleSortEvent(table, tbody, col);
+            }
+        });
+    });
+
+    // Sort first colummn
+    const tablesWithSortColumns = new Set();
+    sortableColumnHeaders.forEach(col => {
+        tablesWithSortColumns.add(col.closest("table"));
+    });
+
+    tablesWithSortColumns.forEach(table => {
+        // TODO: first
+        const firstSortColumn = table.querySelector(".sort-column");
+        if (firstSortColumn) {
+            const tbody = table.querySelector("tbody");
+
+            // Get column type and apply appropriate default sort direction
+            const columnType = firstSortColumn.getAttribute('data-sort-type');
+            const defaultDirection = getDefaultSortDirection(columnType);
+            const isAscending = defaultDirection === 'ascending';
+
+            // Apply initial sort based on column type
+            const rows = Array.from(tbody.querySelectorAll("tr"));
+            const colIndex = Array.from(firstSortColumn.parentNode.children).indexOf(firstSortColumn);
+            const sortedRows = sortTableData(rows, colIndex, isAscending, columnType);
+
+            // Update UI to reflect the sort
+            firstSortColumn.classList.add(defaultDirection);
+            firstSortColumn.setAttribute('aria-sort', defaultDirection);
+
+            // Update DOM with sorted rows
+            tbody.innerHTML = "";
+            sortedRows.forEach((row) => tbody.appendChild(row));
+        }
+    });
+}
+
+function getDefaultSortDirection(columnType) {
+    switch (columnType) {
+        case 'date':
+            return 'descending';
+        case 'numeric':
+        case 'text':
+        default:
+            return 'ascending';
+    }
+}
+
+function determineColumnType(data, colIndex) {
+    if (isDateColumn(data, colIndex)) {
+        return 'date';
+    } else if (isNumericColumn(data, colIndex)) {
+        return 'numeric';
+    } else {
+        return 'text';
+    }
+}
+
+function handleSortEvent(table, tbody, col) {
+    const rows = Array.from(tbody.querySelectorAll("tr"));
+    const colIndex = Array.from(col.parentNode.children).indexOf(col);
+
+    let state;
+    if (col.classList.contains("ascending")) {
+        state = "descending";
+    } else if (col.classList.contains("descending")) {
+        state = "ascending";
+    } else {
+        // First click - use default direction for this column type
+        state = col.getAttribute('data-default-direction');
+    }
+
+    // Clear all column states and set them to not-sorted
+    col.parentNode.querySelectorAll(".sort-column").forEach(c => {
+        c.classList.remove("ascending", "descending");
+        c.setAttribute('aria-sort', 'none');
+    });
+
+    // Get column type from data attribute
+    const columnType = col.getAttribute('data-sort-type');
+    let finalRows = sortTableData(rows, colIndex, state === "ascending", columnType);
+
+    col.classList.add(state);
+    col.setAttribute('aria-sort', state);
+    tbody.innerHTML = "";
+    finalRows.forEach((row) => tbody.appendChild(row));
+}
+
+function isNumericColumn(data, colIndex) {
+    return data.every(row => {
+        const cellText = row.cells[colIndex].innerHTML.trim();
+        return cellText === '' || !isNaN(parseFloat(cellText));
+    });
+}
+
+// Handles Norwegian format dd.mm.yyyy or dd.mm.yy
+const NORWEGIAN_DATE_PATTERN = /^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/;
+
+function isDateColumn(data, colIndex) {
+    return data.every(row => {
+        const cellText = row.cells[colIndex].innerHTML.trim();
+        if (!NORWEGIAN_DATE_PATTERN.test(cellText)) {
+            return false;
+        }
+        const date = parseNorwegianDate(cellText);
+        return !isNaN(date.getTime());
+    });
+}
+
+function parseNorwegianDate(dateString) {
+    const match = dateString.match(NORWEGIAN_DATE_PATTERN);
+    if (match) {
+        const [, day, month, year] = match;
+        // Convert to ISO format yyyy-mm-dd for Date constructor
+        const fullYear = year.length === 2 ? `20${year}` : year;
+        return new Date(`${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    }
+    // Fallback to standard Date parsing
+    return new Date(dateString);
+}
+
+function sortTableData(data, colIndex, ascending, columnType) {
+    return data.sort((a, b) => {
+        const aText = (a.cells[colIndex].innerHTML.trim()).toLowerCase();
+        const bText = (b.cells[colIndex].innerHTML.trim()).toLowerCase();
+
+        let aValue, bValue;
+
+        switch (columnType) {
+            case 'numeric':
+                // Parse as numbers, treating empty/invalid as 0
+                aValue = parseFloat(aText) ?? 0;
+                bValue = parseFloat(bText) ?? 0;
+                break;
+
+            case 'date':
+                // Parse as dates, treating empty/invalid as epoch (1970-01-01)
+                aValue = aText ? parseNorwegianDate(aText).getTime() : 0;
+                bValue = bText ? parseNorwegianDate(bText).getTime() : 0;
+                break;
+
+            case 'text':
+            default:
+                // Keep as strings for text comparison
+                aValue = aText;
+                bValue = bText;
+                break;
+        }
+
+        if (aValue < bValue) {
+            return ascending ? -1 : 1;
+        }
+        if (aValue > bValue) {
+            return ascending ? 1 : -1;
+        }
+        return 0;
+    });
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    initializeSortableColumns();
+});

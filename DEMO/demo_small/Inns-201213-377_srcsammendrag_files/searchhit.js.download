@@ -1,0 +1,18 @@
+(() => {
+    //optimizely search & navigation statistics
+    //consume search hit parameters and clear from url
+    const searchHitApiUrl = "/api/GlobalSearchApi/SearchHit/";
+    const pageUrl = new URL(window.location.href);
+    const search_request_id = pageUrl.searchParams.get("_t_id");
+    if (search_request_id) {
+        fetch(searchHitApiUrl + window.location.search);
+
+        Array.from(pageUrl.searchParams.keys())
+            .filter(key => key.startsWith("_t_"))
+            .forEach(key => {
+                pageUrl.searchParams.delete(key);
+            });
+
+        window.history.replaceState(null, "", pageUrl);
+    }
+})();

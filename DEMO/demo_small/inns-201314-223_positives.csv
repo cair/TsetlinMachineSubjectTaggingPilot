@@ -1,0 +1,6 @@
+skoler,grunnskolen|251.0,skolene|121.0,elever|106.0,skolen|89.0,trinn|64.0,videregående|49.0,skoler|47.0,retten|42.0,tar|40.0,correct
+utdanning,opplæring|153.0,videregående|96.0,incorrect
+grunnskole,skolen|148.0,grunnskolen|109.0,skoler|104.0,kommunene|82.0,skolene|82.0,kommuner|74.0,correct
+videregående skoler,opplæring|356.0,spesialundervisning|190.0,videregående|118.0,opplæringslova|97.0,fylkeskommunen|74.0,skoler|42.0,correct
+voksenopplæring,opplæring|212.0,voksne|176.0,videregående|157.0,elever|46.0,correct
+privatskoler,private|282.0,elever|133.0,elevene|78.0,skolen|78.0,skolene|78.0,skoler|63.0,spesialundervisning|46.0,correct
