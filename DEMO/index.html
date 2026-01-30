@@ -3,23 +3,39 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Sample Viewer Web Application</title>
+  <title>Stortinget Demo</title>
   <link rel="stylesheet" href="style.css">
+  <style>
+    /* Minimal safety styles in case style.css is absent */
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 12px; }
+    .controls { margin: 8px 0 16px; }
+    /*.viewer-container { display: grid; grid-template-columns: 1fr 340px; gap: 12px; align-items: start; }
+    .viewer { border: 1px solid #ddd; padding: 10px; min-height: 70vh; overflow: auto; background: #fff; }
+    .viewer2 { display: flex; flex-direction: column; gap: 8px; }
+    .viewer_right { border: 1px solid #ddd; padding: 8px; min-height: 70vh; overflow: auto; background: #fafafa; }*/
+    .class-label { display: block; font-weight: 600; margin: 8px 0 4px; cursor: pointer; }
+    .negation-class-label { display: block; font-weight: 600; margin: 8px 0 4px; }
+    .literal, .negation-literal { display: inline-block; margin: 4px 6px 4px 0; padding: 3px 6px; border-radius: 4px; background: #f0f0f0; cursor: pointer; }
+    .literal:hover, .negation-literal:hover { background: #e6e6e6; }
+    .color-circle { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .highlight { background-color: #fffb91; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.15); }
+    .tooltip { position: fixed; pointer-events: none; z-index: 9999; display: none; }
+    h4 { margin: 6px 0 10px; }
+  </style>
 </head>
 <body>
-
-  <h3 id="header">Currently viewing: None</h3>
+  <h3 id="header">Viser for øyeblikket: Ingen. Klikk for å laste ned <a href = "https://github.com/cair/TsetlinMachineSubjectTaggingPilot/raw/refs/heads/main/DEMO/demo_documents.zip" target="_blank" download='demo_documents.zip'>EKSEMPELMAPPEN</a>.Pakk den ut til skrivebordet og last den opp via opplastingsknappen nedenfor.</h3>
 
   <div class="controls">
-    <label for="folderInput">Upload folder:</label>
+    <label for="folderInput">Last opp mappe:</label>
     <input type="file" id="folderInput" webkitdirectory directory multiple>
     <br><br>
-    <label id="prefixlabel" for="prefixSelect" style="display: none;">Choose a sample:</label>
+    <label id="prefixlabel" for="prefixSelect" style="display: none;">Velg en sak:</label>
     <select id="prefixSelect" style="display: none;">
-      <option value="">-- Select --</option>
+      <option value="">-- Velg --</option>
     </select>
     <br><br>
-    <label id="sliderlabel" for="slider" style="display: none;">Literal Display Percentage:</label>
+    <label id="sliderlabel" for="slider" style="display: none;">Visningsprosent:</label>
     <input type="range" id="slider" min="20" max="100" value="100" style="display: none;">
     <span id="sliderValue" style="display: none;">100%</span>
   </div>
@@ -27,8 +43,9 @@
   <div class="viewer-container">
     <div class="viewer" id="sammendragViewer">....</div>
     <div class="viewer2">
-    <div class="viewer_right" id="clausesViewer">....</div>
-    <div class="viewer_right" id="negationViewer" style="display: none;">....</div></div>
+      <div class="viewer_right" id="clausesViewer">....</div>
+      <div class="viewer_right" id="negationViewer" style="display: none;">....</div>
+    </div>
   </div>
 
   <div class="tooltip" id="tooltip"></div>
@@ -43,11 +60,25 @@
     const sliderValue = document.getElementById("sliderValue");
     const tooltip = document.getElementById("tooltip");
 
-    let fileMap = {};
+    // Data stores
+    let fileMap = {};          // { prefix: {sammendrag, srcsammendrag, positives, negatives_vocab} }
+    let pathMap = {};          // { webkitRelativePath (normalized) : File }
+    let urlMap  = {};          // { normalized path -> objectURL }
     let classData = {};
+    let negationsData = {};
     let currentPrefix = "";
-    let currentText = "";
-    let currentHighlights = [];
+    let originalHTML = "";     // pristine rendered HTML inside sammendragViewer (string snapshot)
+
+    /* ---------- Helpers ---------- */
+
+
+    function extractSourceURL(htmlText){
+      
+    const m = htmlText.match(/<!--\s*saved from url=\(\d+\)(.*?)\s*-->/i);
+  return m ? m[1] : '';
+
+    }
+
 
     function escapeRegExp(string) {
       return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -58,79 +89,329 @@
       return colors[index % colors.length];
     }
 
-    folderInput.addEventListener("change", () => {
-      fileMap = {};
-      const files = Array.from(folderInput.files);
+    function dirname(path) {
+      const i = path.lastIndexOf("/");
+      return i === -1 ? "" : path.slice(0, i);
+    }
 
-      files.forEach(file => {
-        const match = file.name.match(/^(.*?)(sammendrag|positives|negatives_vocab)/i);
-        if (match) {
-          const prefix = match[1];
-          const type = match[2].toLowerCase();
-          console.log(`Found file: ${file.name} with prefix: ${prefix} and type: ${type}`);
-          if (!fileMap[prefix]) fileMap[prefix] = {};
-          fileMap[prefix][type] = file;
-        }
+    function normalizePath(p) {
+      // remove leading './', collapse './' segments, remove duplicate slashes
+      return p.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/\.\//g, "/").replace(/\/{2,}/g, "/");
+    }
+
+    function resolveRelative(baseDir, rel) {
+      // If absolute URL or protocol-relative, return as is
+      if (/^(?:[a-z]+:)?\/\//i.test(rel)) return rel;
+      if (/^data:/.test(rel) || /^blob:/.test(rel)) return rel;
+
+      // If it's already rooted to upload (starts with '/'), treat it as relative to baseDir root of upload
+      // but we don't have absolute root; keep as relative and try lookup in map directly.
+      let path = rel;
+      if (!rel.startsWith("/")) {
+        path = baseDir ? baseDir + "/" + rel : rel;
+      }
+      // normalize ../ and ./
+      const parts = [];
+      normalizePath(path).split("/").forEach(seg => {
+        if (seg === "" || seg === ".") return;
+        if (seg === "..") parts.pop();
+        else parts.push(seg);
       });
+      return parts.join("/");
+    }
 
-      prefixSelect.innerHTML = '<option value="">-- Select --</option>';
-      Object.keys(fileMap).forEach(prefix => {
-          const option = document.createElement("option");
-          option.value = prefix;
-          option.textContent = prefix;
-          prefixSelect.appendChild(option);
-      });
+    function makeObjectURLFor(path) {
+      const norm = normalizePath(path);
+      if (urlMap[norm]) return urlMap[norm];
+      const f = pathMap[norm];
+      if (!f) return null;
+      const url = URL.createObjectURL(f);
+      urlMap[norm] = url;
+      return url;
+    }
 
-      prefixSelect.style.display = "inline";
-      document.getElementById("prefixlabel").style.display = "inline";
-    });
+    // Rewrites attributes on DOM elements to blob URLs based on uploaded files
+    function rewriteResources(dom, htmlFilePath) {
+      const htmlDir = dirname(normalizePath(htmlFilePath)); // directory containing xxx_srcsammendrag
 
-    prefixSelect.addEventListener("change", async () => {
-      currentPrefix = prefixSelect.value;
-      if (!currentPrefix) return;
+      // 1) Handle generic URL-bearing attributes
+      const URL_ATTRS = ["src", "href", "poster", "data", "background"];
+      URL_ATTRS.forEach(attr => {
+        dom.querySelectorAll(`[${attr}]`).forEach(el => {
+          const raw = el.getAttribute(attr);
+          if (!raw) return;
+          // leave absolute/data/blob URLs unchanged
+          if (/^(?:[a-z]+:)?\/\//i.test(raw) || /^data:/.test(raw) || /^blob:/.test(raw)) return;
 
-      header.textContent = `Currently viewing: ${currentPrefix}`;
-      const sammendragFile = fileMap[currentPrefix].sammendrag;
-      const clausesFile = fileMap[currentPrefix].positives;
-      const negationsFile = fileMap[currentPrefix].negatives_vocab;
-
-      console.log(`Loading files for prefix: ${sammendragFile.name} and ${clausesFile.name} and ${negationsFile.name}`);
-
-      currentText = await sammendragFile.text();
-      const clausesText = await clausesFile.text();
-      const negationsText = await negationsFile.text();
-
-      sammendragViewer.textContent = currentText;
-      negationsData = {};
-      parseclausesFile(clausesText);
-      parse_negations(negationsText);
-      applyHighlights();
-      slider.style.display = "inline";
-      sliderValue.style.display = "inline";
-      document.getElementById("sliderlabel").style.display = "inline";
-    });
-
-    slider.addEventListener("input", () => {
-      sliderValue.textContent = slider.value + "%";
-      
-      if (currentPrefix) {
-        const negationsfile = fileMap[currentPrefix].negatives_vocab;
-        const clausesFile = fileMap[currentPrefix].positives;
-        clausesFile.text().then(text => {
-          negationsfile.text().then(negationstext =>{
-          parseclausesFile(text);
-          parse_negations(negationstext);
-          applyHighlights();
+          const resolved = resolveRelative(htmlDir, raw);
+          const blobURL = makeObjectURLFor(resolved);
+          if (blobURL) {
+            el.setAttribute(attr, blobURL);
+          } else {
+            // Try also prefixing with _files folder if author forgot path in HTML
+            const tryFiles = resolveRelative(htmlDir, raw);
+            const candidate = tryFiles;
+            const blob2 = makeObjectURLFor(candidate);
+            if (blob2) el.setAttribute(attr, blob2);
+          }
         });
+      });
+
+      // 2) Handle srcset (img/picture/source)
+      dom.querySelectorAll("[srcset]").forEach(el => {
+        const raw = el.getAttribute("srcset");
+        if (!raw) return;
+        const parts = raw.split(",").map(s => s.trim()).filter(Boolean);
+        const mapped = parts.map(entry => {
+          // format: "url 1x" OR "url 320w"
+          const m = entry.match(/^(\S+)(\s+.+)?$/);
+          if (!m) return entry;
+          const urlPart = m[1];
+          const sizePart = m[2] || "";
+          if (/^(?:[a-z]+:)?\/\//i.test(urlPart) || /^data:/.test(urlPart) || /^blob:/.test(urlPart)) {
+            return entry; // keep as-is
+          }
+          const resolved = resolveRelative(htmlDir, urlPart);
+          const blobURL = makeObjectURLFor(resolved);
+          return (blobURL || urlPart) + sizePart;
+        });
+        el.setAttribute("srcset", mapped.join(", "));
+      });
+
+      // 3) (Optional) inline <style> url(...) rewriting — skip for now.
+      // Linked CSS URLs will work because <link href="blob:...hose relative
+      // url(...) will resolve against the blob: URL itself; browsers do allow that.
+
+      return dom;
+    }
+
+    
+function extractSammendrag(dom) {
+  // Utility: normalize heading text to check for "sammendrag"
+  const normalizeText = (t) => (t || "")
+    .replace(/\u00A0/g, " ")        // non-breaking spaces to normal
+    .replace(/\s+/g, " ")           // collapse whitespace
+    .trim()
+    .toLowerCase();
+
+  // Find first heading containing "sammendrag" (e.g. "Sammendrag" or "1. Sammendrag")
+  const headers = [...dom.querySelectorAll('h1,h2,h3,h4,h5,h6')];
+  const header = headers.find(h => normalizeText(h.textContent).includes('sammendrag'));
+  const wrapper = document.createElement('div');
+  wrapper.className = 'sammendrag-extract';
+
+  if (!header) {
+    wrapper.innerHTML = '<p>No Sammendrag found</p>';
+    // store snapshot for highlighter resets
+    originalHTML = wrapper.outerHTML;
+    return originalHTML;
+  }
+
+  // Add the heading itself
+  wrapper.appendChild(header.cloneNode(true));
+
+  // Determine the level of the found heading (1..6)
+  const levelOf = (h) => parseInt(h.tagName.substring(1), 10);
+  const startLevel = levelOf(header);
+
+  // Collect subsequent siblings until we hit a heading of same or higher level
+  const isHeading = (el) => el && /^H[1-6]$/.test(el.tagName);
+  const isAllowedBlock = (el) => el && /^(DIV|P|SECTION|ARTICLE|UL|OL)$/.test(el.tagName);
+
+  let n = header.nextElementSibling;
+  while (n) {
+    if (isHeading(n)) {
+      // stop when the next heading is same or higher level
+      if (levelOf(n) <= startLevel) break;
+      // If it's a deeper subheading (e.g., H2 under H1 Sammendrag), include it and its content
+      wrapper.appendChild(n.cloneNode(true));
+    } else if (isAllowedBlock(n)) {
+      wrapper.appendChild(n.cloneNode(true));
+    }
+    n = n.nextElementSibling;
+  }
+
+  // Fallback: if we somehow only captured the heading, try to capture at least the immediate text block
+  if (wrapper.children.length === 1) {
+    const immediate = header.nextElementSibling;
+    if (isAllowedBlock(immediate)) {
+      wrapper.appendChild(immediate.cloneNode(true));
+    }
+  }
+
+  // store snapshot for highlighter resets
+  originalHTML = wrapper.outerHTML;
+  return originalHTML;
+}
+
+
+
+    // Highlighting plan
+    function buildHighlightPlan() {
+      const plan = [];
+      const literalMap = {};
+      for (const className in classData) {
+        const data = classData[className];
+        (data.visibleLiterals || []).forEach(lit => {
+          if (!literalMap[lit]) literalMap[lit] = [];
+          literalMap[lit].push(className);
         });
       }
-    });
+      const overlapColor = "#FFFF99";
+      Object.entries(literalMap).forEach(([literal, classes]) => {
+        if (classes.length === 1) {
+          console.log('here:'+literal)
+          console.log('now:'+literal.split('|')[0].replace(/"/g, ''))
+          litword = literal.split('|')[0].replace(/"/g, '')
+          plan.push({ literal:litword, color: classData[classes[0]].color, classes });
+        } else {
+          plan.push({ literal:litword, color: overlapColor, classes });
+        }
+      });
+      console.log(plan)
+      return plan;
+    }
 
-    function parse_negations(negationsText){
-      console.log('Negations....');
-      console.log('Negations')
-        const lines2 = negationsText.split(/\r?\n/);
-        lines2.forEach((line, index) => {
+    // DOM text-node based highlighter
+    function highlightDOM(plan) {
+      // Reset to pristine render to keep highlights clean across re-applies
+      sammendragViewer.innerHTML = originalHTML;
+
+      let text = sammendragViewer.innerHTML
+      const sorted = plan.slice().sort((a, b) => b.literal.length - a.literal.length);
+      sorted.forEach(({ literal, color }) => {
+        const pattern = new RegExp(`\\b(${literal})\\b`, "gi");
+        text = text.replace(pattern, match => {
+          return `<span class="highlight" style="background-color:${color};">${match}</span>`;
+        });
+
+        sammendragViewer.innerHTML = text;
+      });
+
+
+      /*// Collect text nodes
+      const walker = document.createTreeWalker(sammendragViewer, NodeFilter.SHOW_TEXT, {
+        acceptNode: node => node.nodeValue && node.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+      });
+      const textNodes = [];
+      let n;
+      while (n = walker.nextNode()) textNodes.push(n);
+      console.log('in highlight')
+      console.log(plan)
+      // Longer literals first
+      const sorted = plan.slice().sort((a, b) => b.literal.length - a.literal.length);
+      //console.log(sorted)
+
+      sorted.forEach(({ literal, color }) => {
+        const pattern = new RegExp(`\\b(${literal})\\b`, "gi"); //new RegExp(`\\b(${escapeRegExp(litword)})\\b`, "gi");
+        for (const tn of textNodes) {
+          if (!tn.parentNode) continue;
+          const txt = tn.nodeValue;
+          let match, last = 0, changed = false;
+          const frag = document.createDocumentFragment();
+          pattern.lastIndex = 0;
+          console.log(literal);
+          console.log(txt);
+          console.log(pattern.exec(txt));
+          //FIX Highlighting!!!
+          while ((match = pattern.exec(txt)) !== null) {
+            console.log('Matched')
+            changed = true;
+            frag.appendChild(document.createTextNode(txt.slice(last, match.index)));
+            const span = document.createElement("span");
+            span.className = "highlight";
+            span.style.backgroundColor = color;
+            span.textContent = match[0];
+            frag.appendChild(span);
+            last = match.index + match[0].length;
+          }
+          if (changed) {
+            frag.appendChild(document.createTextNode(txt.slice(last)));
+            tn.parentNode.replaceChild(frag, tn);
+          }
+        }
+      });*/
+    }
+
+    function renderclausesViewer() {
+      clausesViewer.innerHTML = "<h4>Predikeret emneord(er)</h4>";
+      Object.entries(classData).forEach(([className, data]) => {
+        const label = document.createElement("div");
+        label.className = "class-label";
+        label.innerHTML = `<span class="color-circle" style="background-color:${data.color}"></span>${className} (${data.correct})`;
+        label.addEventListener("click", () => highlightClass(className));
+        label.addEventListener("dblclick", () => applyHighlights());
+        clausesViewer.appendChild(label);
+
+        (data.visibleLiterals || []).forEach(literal => {
+          const literalword = literal.split('|')[0].replace(/"/g, '');
+          const literalimportance = literal.split('|')[1]?.replace(/"/g, '') ?? '';
+          const lit = document.createElement("span");
+          lit.className = "literal";
+          lit.innerHTML = `<span class="literaltooltip">${literalimportance}</span>${literalword}`;
+          lit.addEventListener("click", () => highlightLiteral(literal));
+          clausesViewer.appendChild(lit);
+        });
+      });
+    }
+
+    function applyHighlights() {
+      const plan = buildHighlightPlan();
+      const negationViewer = document.getElementById("negationViewer");
+      negationViewer.style.display = "none";
+      highlightDOM(plan);
+    }
+
+    function viewNegationsForClass(className) {
+      const negationViewer = document.getElementById("negationViewer");
+      negationViewer.style.display = "block";
+      const clauseview = document.getElementById("clausesViewer");
+      clauseview.style.height = "33vh";
+      negationViewer.style.height = "33vh";
+      negationViewer.innerHTML = "<h4>Negativ order til emne: " + className + "</h4>";
+      Object.entries(negationsData[className] || {}).forEach(([negclassName, data]) => {
+        const negclass = negclassName;
+        const negDiv = document.createElement("div");
+        negDiv.className = "negation-class-label";
+        negDiv.innerHTML = `${negclass}`;
+        negationViewer.appendChild(negDiv);
+        (data.neg_literals || []).forEach(neg_literal => {
+          const negliteralword = neg_literal.split('|')[0].replace(/"/g, '');
+          const negliteralimportance = neg_literal.split('|')[1]?.replace(/"/g, '') ?? '';
+          const neglit = document.createElement("span");
+          neglit.className = "negation-literal";
+          neglit.innerHTML = `<span class="negliteraltooltip">${negliteralimportance}</span>${negliteralword}`;
+          negationViewer.appendChild(neglit);
+        });
+      });
+    }
+
+    function highlightClass(className) {
+      const data = classData[className];
+      const plan = (data.visibleLiterals || []).map(lit => ({ literal: lit.split('|')[0], color: data.color, classes: [className] }));
+      highlightDOM(plan);
+      viewNegationsForClass(className);
+    }
+
+    function highlightLiteral(literal) {
+      const negationViewer = document.getElementById("negationViewer");
+      negationViewer.style.display = "none";
+      const clauseview = document.getElementById("clausesViewer");
+      clauseview.style.height = "70vh";
+
+      const classes = [];
+      for (const className in classData) {
+        if ((classData[className].visibleLiterals || []).includes(literal)) classes.push(className);
+      }
+      const color = classes.length === 1 ? classData[classes[0]].color : "#FFFF99";
+      const plan = [{ literal, color, classes }];
+      highlightDOM(plan);
+    }
+
+    function parse_negations(negationsText) {
+      negationsData = {};
+      const lines2 = negationsText.split(/\r?\n/);
+      lines2.forEach((line) => {
         const parts = line.split(",").map(p => p.trim()).filter(p => p);
         if (parts.length > 1) {
           const className = parts[0];
@@ -138,24 +419,33 @@
           const negs_class = negs[0];
           const neg_size = negs[1];
           const neg_literals = negs.slice(2);
-          negationsData[className][negs_class] ={neg_size, neg_literals}
+          if (!negationsData[className]) negationsData[className] = {};
+          negationsData[className][negs_class] = { neg_size, neg_literals };
         }
-    });  
-  }
+      });
+    }
 
     function parseclausesFile(text) {
       const negationViewer = document.getElementById("negationViewer");
       negationViewer.style.display = "none";
       const clauseview = document.getElementById("clausesViewer");
       clauseview.style.height = "70vh";
+
       classData = {};
       const lines = text.split(/\r?\n/);
       lines.forEach((line, index) => {
         const parts = line.split(",").map(p => p.trim()).filter(p => p);
         if (parts.length > 1) {
-          const className = parts[0].split('|')[0];
-          const literals = parts.slice(1,-1);
-          const correct = parts[parts.length-1];
+          const className = parts[0].split('\n')[0];
+          const literals = parts.slice(1, -1);
+          correct = ""
+          if (parts[parts.length - 1] == "correct") {
+            correct = "riktig";
+          }
+          else {
+            correct = "feil";
+          }
+          //const correct = parts[parts.length - 1];
           const color = generateColor(index);
           classData[className] = { literals, color, correct };
           negationsData[className] = {};
@@ -168,136 +458,126 @@
         const count = Math.ceil(allLiterals.length * percentage / 100);
         classData[className].visibleLiterals = allLiterals.slice(0, count);
       }
-
       renderclausesViewer();
     }
 
-    function renderclausesViewer() {
-      clausesViewer.innerHTML = "<h4>Predicted classes</>";
-      Object.entries(classData).forEach(([className, data]) => {
-        const label = document.createElement("div");
-        label.className = "class-label";
-        label.innerHTML = `<span class="color-circle" style="background-color:${data.color}"></span>${className} (${data.correct})`;
-        label.addEventListener("click", () => highlightClass(className));
-        label.addEventListener("dblclick", () => applyHighlights());
-        clausesViewer.appendChild(label);
+    /* ---------- Upload handling: build maps ---------- */
 
-        data.visibleLiterals.forEach(literal => {
-          literalword = literal.split('|')[0].replace(/"/g, '');
-          literalimportance = literal.split('|')[1].replace(/"/g, '');
-          const lit = document.createElement("span");
-          lit.className = "literal";
-          lit.innerHTML = '<span class="literaltooltip">'+literalimportance+'</span>'+literalword;
-          lit.addEventListener("click", () => highlightLiteral(literal));
-          clausesViewer.appendChild(lit);
-        });
-      });
-    }
+    folderInput.addEventListener("change", () => {
+      fileMap = {};
+      pathMap = {};
+      urlMap = {};
 
-    function applyHighlights() {
-      const negationViewer = document.getElementById("negationViewer");
-      negationViewer.style.display = "none";
-      let text = currentText;
-      currentHighlights = [];
-      const allClasses = Object.keys(classData);
-      let highlightColor = "#FFFF99";
+      const files = Array.from(folderInput.files);
 
-      let literalMap = {};
-      for (const className in classData) {
-        classData[className].visibleLiterals.forEach(lit => {
-          if (!literalMap[lit]) literalMap[lit] = [];
-          literalMap[lit].push(className);
-        });
-      }
+      files.forEach(file => {
+        // Build path map to use during resource rewriting
+        const rel = normalizePath(file.webkitRelativePath || file.name);
+        pathMap[rel] = file;
 
-      Object.entries(literalMap).forEach(([literal, classes]) => {
-        if (classes.length === 1) {
-          const color = classData[classes[0]].color;
-          currentHighlights.push({ literal, color, classes });
-        } else {
-          currentHighlights.push({ literal, color: highlightColor, classes });
+        // Populate prefix grouping for UX, based on your existing naming convention
+        const match = file.name.match(/^(.*?)(sammendrag|positives|negatives_vocab|srcsammendrag)/i);
+        if (match) {
+          const prefix = match[1];
+          const type = match[2].toLowerCase();
+          if (!fileMap[prefix]) fileMap[prefix] = {};
+          fileMap[prefix][type] = file;
         }
       });
-      console.log(literalMap)
 
-      currentHighlights.forEach(({ literal, color, classes }) => {
-        const regex = new RegExp(`\\b(${literal})\\b`, "gi");
-        text = text.replace(regex, match => {
-          const tooltip = classes.length > 1 ? ` title="Classes: ${classes.join(", ")}"` : "";
-          return `<span class="highlight" style="background-color:${color};">${match}</span>`;
-        });
+      // Populate prefix select
+      prefixSelect.innerHTML = '<option value="">-- Velg --</option>';
+      Object.keys(fileMap).forEach(prefix => {
+        const option = document.createElement("option");
+        option.value = prefix;
+        option.textContent = prefix;
+        prefixSelect.appendChild(option);
       });
-
-      sammendragViewer.innerHTML = text;
-    }
-
+      prefixSelect.style.display = "inline";
+      document.getElementById("prefixlabel").style.display = "inline";
+      document.getElementById("header").textContent  = "Velg en sak fra nedtrekksmenyen.";
+    });
     
 
-    function viewNegationsForClass(className) {
-      const negationViewer = document.getElementById("negationViewer");
-      negationViewer.style.display = "block";
-      const clauseview = document.getElementById("clausesViewer");
-      clauseview.style.height = "33vh";
-      negationViewer.style.height = "33vh";
-      negationViewer.innerHTML = "<h4>Negations for class: " + className + "</h4>";
-      Object.entries(negationsData[className]).forEach(([negclassName, data]) => {
-          const negclass = negclassName//+'('+data.neg_size+')'
-          const negDiv = document.createElement("div");
-          negDiv.className = "negation-class-label";
-          negDiv.innerHTML = `${negclass}`;
-          negationViewer.appendChild(negDiv);
+    /* ---------- Main selection flow ---------- */
 
-          data.neg_literals.forEach(neg_literal => {
-            negliteralword = neg_literal.split('|')[0].replace(/"/g, '');
-            negliteralimportance = neg_literal.split('|')[1].replace(/"/g, '');
-            const neglit = document.createElement("span");
-            neglit.className = "negation-literal"; 
-            neglit.innerHTML = '<span class="negliteraltooltip">'+negliteralimportance+'</span>'+negliteralword;
-            negationViewer.appendChild(neglit);
+    prefixSelect.addEventListener("change", async () => {
+      currentPrefix = prefixSelect.value;
+      if (!currentPrefix) return;
+      header.textContent = `Viser: ${currentPrefix}`;
+
+      // Expected: src HTML + _files folder exist within uploaded dir
+      const sammendragFile = fileMap[currentPrefix].srcsammendrag;  // the HTML snapshot
+      const clausesFile = fileMap[currentPrefix].positives;
+      const negationsFile = fileMap[currentPrefix].negatives_vocab;
+
+      // Read text files
+      const htmlText = await sammendragFile.text();
+      const sourceURL = extractSourceURL(htmlText);
+      const clausesText = await (clausesFile ? clausesFile.text() : "");
+      const negationsText = await (negationsFile ? negationsFile.text() : "");
+
+      // Parse HTML into DOM container
+      const container = document.createElement("div");
+      container.innerHTML = htmlText;
+
+      // IMPORTANT: rewrite resource URLs to blob: URLs using uploaded files
+      // Determine the HTML file's relative path to resolve resources properly
+      const htmlRelPath = normalizePath(sammendragFile.webkitRelativePath || sammendragFile.name);
+      rewriteResources(container, htmlRelPath);
+
+      // Insert rewritten DOM into viewer
+      /*sammendragViewer.innerHTML = "";
+      // Move child nodes to preserve events if any
+      while (container.firstChild) {
+        sammendragViewer.appendChild(container.firstChild);
+      }*/
+      //console.log("sourceURL =", sourceURL);
+      
+      sammendragViewer.innerHTML =
+        
+extractSammendrag(container) +
+  (sourceURL
+    ? `<div class="source"><a href="${sourceURL}" target="_blank">Source</a></div>`
+    : ""
+  );
+
+
+
+      // Save pristine DOM HTML for highlighter resets
+      originalHTML = sammendragViewer.innerHTML;
+
+      // Parse & apply highlights
+      parseclausesFile(clausesText);
+      parse_negations(negationsText);
+      applyHighlights();
+
+      // Show UI
+      slider.style.display = "inline";
+      sliderValue.style.display = "inline";
+      document.getElementById("sliderlabel").style.display = "inline";
+    });
+
+    // Slider: recompute visible literals & re-apply highlights
+    slider.addEventListener("input", () => {
+      sliderValue.textContent = slider.value + "%";
+      if (currentPrefix) {
+        const negationsfile = fileMap[currentPrefix].negatives_vocab;
+        const clausesFile = fileMap[currentPrefix].positives;
+        clausesFile.text().then(text => {
+          (negationsfile ? negationsfile.text() : Promise.resolve("")).then(negationstext => {
+            parseclausesFile(text);
+            parse_negations(negationstext || "");
+            applyHighlights();
           });
         });
-    
-    }
-
-    function highlightClass(className) {
-      let text = currentText;
-      const data = classData[className];
-      data.visibleLiterals.forEach(literal => {
-        const regex = new RegExp(`\\b(${literal})\\b`, "gi");
-        text = text.replace(regex, match => {
-          return `<span class="highlight" style="background-color:${data.color};"${tooltip}>${match}</span>`;
-        });
-      });
-      sammendragViewer.innerHTML = text;
-      viewNegationsForClass(className);
-    }
-
-    function highlightLiteral(literal) {
-      const negationViewer = document.getElementById("negationViewer");
-      negationViewer.style.display = "none";
-      const clauseview = document.getElementById("clausesViewer");
-      clauseview.style.height = "70vh";
-      console.log(`Highlighting literal: ${literal}`);
-      console.log(classData);
-      let text = currentText;
-      const classes = [];
-      for (const className in classData) {
-        if (classData[className].visibleLiterals.includes(literal)) {
-          classes.push(className);
-        }
       }
-      console.log(`Literal belongs to classes: ${classes.join(", ")}`);
-      const color = classes.length === 1 ? classData[classes[0]].color : "#FFFF99";
-      const tooltip = '';//classes.length > 1 ? ` title="Classes: ${classes.join(", ")}"` : "";
-      const regex = new RegExp(`\\b(${literal})\\b`, "gi");
-      text = text.replace(regex, match => {
-        return `<span class="highlight" style="background-color:${color};"${tooltip}>${match}</span>`;
-      });
-      sammendragViewer.innerHTML = text;
-    }
-
-
+    });
   </script>
-<div>Powered by the <a href="https://tsetlinmachine.org/">Tsetlin Machine</a>.</div>
+
+  <div>
+    Drevet av <a href="https://tsetlinmachine.org/Tsetlin Machine" target="_blank">Tsetlin Maskin</a> @ CAIR, UiA.
+    <a href="https://github.com/cair/TsetlinMachineSubjectTaggingPilot/blob/demo/DEMO/README.md">README</a>
+  </div>
 </body>
 </html>
